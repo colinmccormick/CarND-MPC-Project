@@ -14,7 +14,7 @@ The project consists of the following primary components:
 
 ## MPC concepts
 
-The MPC control paradigm re-envisions the control problem as an optimization problem about the vehicle's future trajectory. A physics-based model determines how the vehicle will respond to actuator inputs (steering and throttle). The algorithm is given a set of waypoints (or equivalently, a polynomial describing the lane center ahead of the vehicle), and finds the optimum set of actuator values at each timestep to minimize a cost function relative to those waypoints. The first set of actuator values are then fed to the vehicle, and the remainder are discarded.
+The MPC control paradigm re-envisions the control problem as an optimization problem about the vehicle's future trajectory. A physics-based kinematic model determines how the vehicle will respond to actuator inputs (steering and throttle). The algorithm is given a set of waypoints (or equivalently, a polynomial describing the lane center ahead of the vehicle), and finds the optimum set of actuator values at each timestep to minimize a cost function relative to those waypoints. The first set of actuator values are then fed to the vehicle, and the remainder are discarded.
 
 At the next timestep, the state of the vehicle is measured again, and the waypoint list (equivalently, the polynomial fit) is updated reflecting the vehicle's new position. The controller solves the optimization problem again, returning only the first set of actuator values to the vehicle. This loop repeats continuously.
 
@@ -28,21 +28,27 @@ These mapped waypoints are then passed to a polynomial fit function, which retur
 
 ## Handling latency
 
-Real vehicles suffer from latency of actuators, meaning that the actual steering and throttle may not respond instantly to the commands from the controller. MPC can handle this situation well, by using the physics-based model to predict where the vehicle will be after the latency interval, and calculating the CTE and orientation error. I implement this using the model equations, which are in a simplified form because of the coordinate transformation (lines 141-148 of main.cpp). Following this, I package the post-latency state variables and errors and pass them to the MPC solver.
+Real vehicles suffer from latency of actuators, meaning that the actual steering and throttle may not respond instantly to the commands from the controller. MPC can handle this situation well, by using the kinematic model to predict where the vehicle will be after the latency interval, and calculating the CTE and orientation error. This can be implemented using the model equations, which are in a simplified form because of the coordinate transformation (lines 141-148 of main.cpp). Following this, the post-latency state variables and errors are packaged and passed to the MPC solver.
 
 ## Solver setup and constraints
 
-The MPC solver sets up a vector to hold the state variables, errors, and actuator values for all future timesteps within the simulation. Choosing the number of timesteps, and the time interval between them, is a balance between increasing the precision of the analysis and minimizing computational time (which must be kept below the timestep interval to operate in real-time). These are set by the variables N and dt in MPC.cpp; after some experimentation I settled on using 10 timesteps of 0.1s each.
+The MPC solver sets up a vector to hold the state variables, errors, and actuator values for all future timesteps within the simulation. Choosing the number of timesteps, and the time interval between them, is a balance between increasing the precision of the analysis and minimizing computational time (which must be kept below the timestep interval to operate in real-time). These are set by the variables N and dt in MPC.cpp; after some experimentation I settled on using 10 timesteps of 0.1s each. The product of N and dt gives the forward time horizon that the solver is considering, i.e. how far ahead it is looking.
 
 The solver initializes all values in the vector to zero except for the state and error values for the first (current) timestep. It then sets the upper and lower bounds these values can take; for all non-actuator values these are the maximum system number, while the steering is limited to +/- 25 degrees (normalized by the vehicle effective length) and the throttle is limited to +/-1. 
 
-Next, the solver sets the upper and lower constraints on all values. These are simply the values themselves for the current timestep, and zero for all future timesteps. I set the constraint equations later, to reflect the model equations of motion.
+Next, the solver sets the upper and lower constraints on all values. These are simply the values themselves for the current timestep, and zero for all future timesteps. This is because the constraint equations from the kinematic model are expressed as differences between the predicted value of the next timestep and the solver's variable for that value (see below).
 
-Finally, I call the solve function with all constraints specified, and the optimizer returns the problem solution with the future actuator values and model-predicted vehicle state at each timestep.
+Finally, the solve function is called with all constraints specified, and the optimizer returns the problem solution with the future actuator values and model-predicted vehicle state at each timestep.
 
 ## Constraint equations from model
 
-The optimizer imposes constraints on the state and error values at all future timesteps based on the physics model of the vehicle motion (lines 105-110 of MPC.cpp). These reflect the physical and geometric effects of the steering angle and throttle values explored by the optimizer. Using these, the optimizer can calculate a cost function and seek to minimize it over the actuator state space.
+The optimizer imposes constraints on the state and error values at all future timesteps based on the kinematic model of the vehicle motion (lines 105-110 of MPC.cpp). These reflect the physical and geometric effects of the steering angle and throttle values explored by the optimizer. Using these, the optimizer can calculate a cost function and seek to minimize it over the actuator state space.
+
+These kinematic equations (which assume constant acceleration and steering angle at each timestep) are as follows:
+
+![Kinematic model equations](kinematic_model.png)
+
+Here phi represents the global orientation (measured CCW from the x axis); delta is the steering angle; Lf is the equivalent length of the vehicle; and the subscript "track" refers to the polynomial fit of the waypoints. 
 
 ## Cost function
 
@@ -64,7 +70,9 @@ After further experimentation, I settled on CTE and orientation weights of 2000,
 
 I tried running the vehicle with a target velocity of 75 mph; with the weights specified above it got up to 65 mph on the straightaways but struggled with the S curve (with the optimizer running out of time at several timesteps). Reducing the number of timesteps to 8 resulted in erratic behavior (model prediction that appears far off from the waypoint fit) and increasing to 12 resulted in singificantly more optimizer failures. Increasing the weights of the CTE and orientation error seems to have the best effect, although there are still occasional optimizer failures even at weights of 4000. 
 
-Finally, to reduce the compute time and hopefully reduce the number of optimizer time-outs, I defined some helper variables in the constraints calculation (such as velocity times time) to eliminate redundant calculations. This doesn't seem to have had much impact.
+To reduce the compute time and hopefully reduce the number of optimizer time-outs, I defined some helper variables in the constraints calculation (such as velocity times time) to eliminate redundant calculations. This doesn't seem to have had much impact.
+
+Finally, I set the reference velocity at 85 mph and explored different weight settings until the vehicle was able to successfully drive around the track, lap after lap. The max speed was 75 mph, with weights of 2500 for CTE and orientation error; 1 for velocity error; 10 for both actuator values; 1000 for steering changes, and 100 for throttle changes.
 
 ---
 
