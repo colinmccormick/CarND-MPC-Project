@@ -52,7 +52,7 @@ Here phi represents the global orientation (measured CCW from the x axis); delta
 
 ## Cost function
 
-The optimizer seeks to minimize a cost fucntion, and tuning this function is an important part of getting good performance out of the controller. This involves both determining what variables should be considered, and what weights to give them. Per the classroom discussion, the main factors to include are:
+The optimizer seeks to minimize a cost function, and tuning this function is an important part of getting good performance out of the controller. This involves both determining what variables should be considered, and what weights to give them. Per the classroom discussion, the best factors to include are:
 
 * The cross-track error (CTE), orientation error, and velocity error (vs a setpoint velocity)
 * The actuator values (steering and throttle)
@@ -70,9 +70,9 @@ After further experimentation, I settled on CTE and orientation weights of 2000,
 
 I tried running the vehicle with a target velocity of 75 mph; with the weights specified above it got up to 65 mph on the straightaways but struggled with the S curve (with the optimizer running out of time at several timesteps). Reducing the number of timesteps to 8 resulted in erratic behavior (model prediction that appears far off from the waypoint fit) and increasing to 12 resulted in singificantly more optimizer failures. Increasing the weights of the CTE and orientation error seems to have the best effect, although there are still occasional optimizer failures even at weights of 4000. 
 
-To reduce the compute time and hopefully reduce the number of optimizer time-outs, I defined some helper variables in the constraints calculation (such as velocity times time) to eliminate redundant calculations. This doesn't seem to have had much impact.
+To reduce the compute time and hopefully reduce the number of optimizer time-outs, I defined some helper variables in the constraints calculation (such as velocity times time) that eliminate redundant calculations. This doesn't seem to have had much impact.
 
-Finally, I set the reference velocity at 85 mph and explored different weight settings until the vehicle was able to successfully drive around the track, lap after lap. The max speed was 75 mph, with weights of 2500 for CTE and orientation error; 1 for velocity error; 10 for both actuator values; 1000 for steering changes, and 100 for throttle changes.
+Finally, I set the reference velocity at 85 mph and explored different weight settings until the vehicle was able to successfully drive around the track, lap after lap, with a max speed of 75 mph. (The optimizer fails on some timesteps around the S-curve, but the vehicle is able to recover and drive through those points.) The MPC weights that enabled this were 2500 for CTE and orientation error; 1 for velocity error; 10 for both actuator values; 1000 for steering changes, and 100 for throttle changes.
 
 ---
 
